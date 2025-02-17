@@ -1,63 +1,50 @@
 #include <iostream>
-#include <cstring>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <string>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
-#define SERVER_IP "172.17.41.25"  // Change if the server is on another machine
-#define SERVER_PORT 9000
-
-void showMenu() {
-    std::cout << "Choose an option:\n";
-    std::cout << "1. Rock\n";
-    std::cout << "2. Paper\n";
-    std::cout << "3. Scissors\n";
-    std::cout << "Enter choice: ";
-}
+#pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 
 int main() {
-    int sock;
-    struct sockaddr_in server;
-    char choice[2];
-    char server_reply[200];
-
-    // Create socket
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        std::cerr << "Could not create socket\n";
-        return 1;
+    // Initialize Winsock
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed!" << std::endl;
+        return -1;
     }
 
-    server.sin_addr.s_addr = inet_addr(SERVER_IP);
-    server.sin_family = AF_INET;
-    server.sin_port = htons(SERVER_PORT);
-
-    // Connect to server
-    if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
-        std::cerr << "Connection failed\n" << SERVER_IP << std::endl;
-        return 1;
+    std::string server_ip = "172.17.41.26"; // Hardcoded server IP
+    int client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket == INVALID_SOCKET) {
+        std::cerr << "Error creating socket!" << std::endl;
+        WSACleanup();
+        return -1;
     }
 
-    std::cout << "Connected to server!\n" << SERVER_IP << std::endl;
+    sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(8080); // Server port
+    server_addr.sin_addr.s_addr = inet_addr(server_ip.c_str());
 
-    // Show menu
-    showMenu();
-    std::cin >> choice;
-
-    // Send choice to server
-    if (send(sock, choice, strlen(choice), 0) < 0) {
-        std::cerr << "Send failed\n";
-        return 1;
+    if (connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+        std::cerr << "Error connecting to server!" << std::endl;
+        closesocket(client_socket);
+        WSACleanup();
+        return -1;
     }
 
-    // Receive server response
-    if (recv(sock, server_reply, sizeof(server_reply), 0) < 0) {
-        std::cerr << "Receive failed\n";
-    } else {
-        std::cout << "Server says: " << server_reply << "\n";
-    }
+    std::string move;
+    std::cout << "Enter your choice (rock, paper, scissors, lizard, spock): ";
+    std::cin >> move;
 
-    // Close socket
-    close(sock);
+    send(client_socket, move.c_str(), move.length(), 0);
+
+    char buffer[1024];
+    int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+    buffer[bytes_received] = '\0'; // Null-terminate the string
+    std::cout << buffer << std::endl;
+
+    closesocket(client_socket); // Close the socket
+    WSACleanup(); // Clean up Winsock
     return 0;
 }
