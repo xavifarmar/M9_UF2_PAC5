@@ -13,7 +13,10 @@ int main() {
         return -1;
     }
 
-    std::string server_ip = "172.17.41.25"; // Hardcoded server IP
+    std::string server_ip;
+    std::cout << "Enter the server IP address: ";
+    std::cin >> server_ip; // Ask the user for the server IP
+
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket == INVALID_SOCKET) {
         std::cerr << "Error creating socket!" << std::endl;
@@ -34,9 +37,43 @@ int main() {
     }
 
     std::string move;
-    std::cout << "Enter your choice (rock, paper, scissors, lizard, spock): ";
-    std::cin >> move;
+    int choice;
 
+    // Menu for the user to choose a move
+    while (true) {
+        std::cout << "Choose your move: \n";
+        std::cout << "1. Rock\n";
+        std::cout << "2. Paper\n";
+        std::cout << "3. Scissors\n";
+        std::cout << "4. Lizard\n";
+        std::cout << "5. Spock\n";
+        std::cout << "Enter the number corresponding to your choice: ";
+        std::cin >> choice;
+
+        switch (choice) {
+            case 1:
+                move = "rock";
+                break;
+            case 2:
+                move = "paper";
+                break;
+            case 3:
+                move = "scissors";
+                break;
+            case 4:
+                move = "lizard";
+                break;
+            case 5:
+                move = "spock";
+                break;
+            default:
+                std::cout << "Invalid choice, please try again.\n";
+                continue; // Prompt the user again if invalid input
+        }
+        break; // Exit the loop once a valid choice is made
+    }
+
+    // Send the move to the server
     send(client_socket, move.c_str(), move.length(), 0);
 
     char buffer[1024];

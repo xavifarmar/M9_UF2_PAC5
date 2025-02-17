@@ -9,11 +9,10 @@
 
 #pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 
-using namespace std;
-mutex mtx; // To avoid race conditions
+std::mutex mtx; // To avoid race conditions
 
 // Game rules in a map (e.g., Rock beats Scissors, etc.)
-map<string, string> rules = {
+std::map<std::string, std::string> rules = {
     {"rock", "scissors"}, {"scissors", "paper"}, {"paper", "rock"},
     {"rock", "lizard"}, {"lizard", "spock"}, {"spock", "scissors"},
     {"scissors", "lizard"}, {"lizard", "paper"}, {"paper", "spock"},
@@ -22,12 +21,12 @@ map<string, string> rules = {
 
 struct Player {
     SOCKET socket;
-    string name;
-    string choice;
+    std::string name;
+    std::string choice;
 };
 
 // Global list of players
-vector<Player> players;
+std::vector<Player> players;
 
 void handle_player(Player& player) {
     char buffer[1024];
@@ -38,13 +37,13 @@ void handle_player(Player& player) {
             break;
         }
         buffer[bytes_received] = '\0'; // Null-terminate the string
-        player.choice = string(buffer);
+        player.choice = std::string(buffer);
 
         // Print player's choice
-        cout << player.name << " chose " << player.choice << endl;
+        std::cout << player.name << " chose " << player.choice << std::endl;
 
         // Game logic to decide winner
-        string result = "draw";
+        std::string result = "draw";
         for (auto& other_player : players) {
             if (other_player.name != player.name) {
                 if (rules[player.choice] == other_player.choice) {
@@ -57,26 +56,50 @@ void handle_player(Player& player) {
             }
         }
 
-        string message = "Your result: " + result + "\n";
+        std::string message = "Your result: " + result + "\n";
         send(player.socket, message.c_str(), message.length(), 0);
     }
 }
 
-string get_server_ip() {
-    // Return the hardcoded IP address
-    return "172.17.41.25";
+std::string get_server_ip() {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        std::cerr << "Error getting hostname" << std::endl;
+        return "";
+    }
+
+    struct addrinfo hints, *info;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;  // Only IPv4 addresses
+    hints.ai_socktype = SOCK_STREAM;
+
+    int res = getaddrinfo(hostname, NULL, &hints, &info);
+    if (res != 0) {
+        std::cerr << "getaddrinfo failed: " << gai_strerror(res) << std::endl;
+        return "";
+    }
+
+    std::string ip_address;
+    for (struct addrinfo* ptr = info; ptr != NULL; ptr = ptr->ai_next) {
+        sockaddr_in* sockaddr_ipv4 = (struct sockaddr_in*)ptr->ai_addr;
+        ip_address = inet_ntoa(sockaddr_ipv4->sin_addr);
+        break;  // We are only interested in the first valid IPv4 address
+    }
+
+    freeaddrinfo(info);
+    return ip_address;
 }
 
 void start_server(int port) {
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        cerr << "WSAStartup failed!" << endl;
+        std::cerr << "WSAStartup failed!" << std::endl;
         return;
     }
 
     SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket == INVALID_SOCKET) {
-        cerr << "Error creating socket!" << endl;
+        std::cerr << "Error creating socket!" << std::endl;
         WSACleanup();
         return;
     }
@@ -87,31 +110,31 @@ void start_server(int port) {
     server_addr.sin_port = htons(port);
 
     if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-        cerr << "Binding failed!" << endl;
+        std::cerr << "Binding failed!" << std::endl;
         closesocket(server_socket);
         WSACleanup();
         return;
     }
 
     listen(server_socket, 5);
-    cout << "Server started. Waiting for clients...\n";
-    cout << "Server IP: " << get_server_ip() << " in port " << port << endl;
+    std::cout << "Server started. Waiting for clients...\n";
+    std::cout << "Server IP: " << get_server_ip() << " in port " << port << std::endl;
 
     while (true) {
         SOCKET client_socket = accept(server_socket, NULL, NULL);
         if (client_socket == INVALID_SOCKET) {
-            cerr << "Accept failed!" << endl;
+            std::cerr << "Accept failed!" << std::endl;
             continue;
         }
 
         // Add new player
-        Player player = {client_socket, "Player_" + to_string(players.size() + 1), ""};
+        Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), ""};
         players.push_back(player);
 
-        cout << player.name << " connected!" << endl;
+        std::cout << player.name << " connected!" << std::endl;
 
         // Handle player in a separate thread
-        thread player_thread(handle_player, ref(player));
+        std::thread player_thread(handle_player, std::ref(player));
         player_thread.detach();
     }
 
