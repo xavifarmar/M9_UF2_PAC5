@@ -1,113 +1,127 @@
 #include <iostream>
+#include <vector>
 #include <string>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <ifaddrs.h>  // Para obtener la IP de las interfaces de red
-#include <cstring>    // Para usar strcmp
-#include <netdb.h>    // Para getaddrinfo()
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <thread>
+#include <map>
+#include <mutex>
 
-using namespace std;
+#pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 
-// Función para obtener la IP del servidor
-string getServerIP() {
-    struct ifaddrs *interfaces, *ifa;
-    void *tmpAddrPtr = NULL;
-    string ipAddress;
+std::mutex mtx; // To avoid race conditions
 
-    if (getifaddrs(&interfaces) == 0) {
-        for (ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next) {
-            // Buscar una interfaz que tenga una dirección IPv4
-            if (ifa->ifa_addr->sa_family == AF_INET) {
-                // Convertir la dirección IPv4 a una cadena
-                tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-                char ip[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, tmpAddrPtr, ip, INET_ADDRSTRLEN);
+// Game rules in a map (e.g., Rock beats Scissors, etc.)
+std::map<std::string, std::string> rules = {
+    {"rock", "scissors"}, {"scissors", "paper"}, {"paper", "rock"},
+    {"rock", "lizard"}, {"lizard", "spock"}, {"spock", "scissors"},
+    {"scissors", "lizard"}, {"lizard", "paper"}, {"paper", "spock"},
+    {"spock", "rock"}
+};
 
-                // Si es la interfaz que está activa y no es la de "lo0" (localhost), la devolvemos
-                if (ifa->ifa_name != NULL && strcmp(ifa->ifa_name, "lo0") != 0) {
-                    ipAddress = ip;
+struct Player {
+    SOCKET socket;
+    std::string name;
+    std::string choice;
+};
+
+// Global list of players
+std::vector<Player> players;
+
+void handle_player(Player& player) {
+    char buffer[1024];
+    while (true) {
+        // Receive choice from player
+        int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
+        if (bytes_received <= 0) {
+            break;
+        }
+        buffer[bytes_received] = '\0'; // Null-terminate the string
+        player.choice = std::string(buffer);
+
+        // Print player's choice
+        std::cout << player.name << " chose " << player.choice << std::endl;
+
+        // Game logic to decide winner
+        std::string result = "draw";
+        for (auto& other_player : players) {
+            if (other_player.name != player.name) {
+                if (rules[player.choice] == other_player.choice) {
+                    result = "win";
+                    break;
+                } else if (rules[other_player.choice] == player.choice) {
+                    result = "lose";
                     break;
                 }
             }
         }
-        freeifaddrs(interfaces);
+
+        std::string message = "Your result: " + result + "\n";
+        send(player.socket, message.c_str(), message.length(), 0);
+    }
+}
+
+std::string get_server_ip() {
+    // Return the hardcoded IP address
+    return "172.17.41.26";
+}
+
+void start_server(int port) {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed!" << std::endl;
+        return;
     }
 
-    return ipAddress.empty() ? "No se pudo obtener la IP del servidor" : ipAddress;
+    SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == INVALID_SOCKET) {
+        std::cerr << "Error creating socket!" << std::endl;
+        WSACleanup();
+        return;
+    }
+
+    sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(port);
+
+    if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+        std::cerr << "Binding failed!" << std::endl;
+        closesocket(server_socket);
+        WSACleanup();
+        return;
+    }
+
+    listen(server_socket, 5);
+    std::cout << "Server started. Waiting for clients...\n";
+    std::cout << "Server IP: " << get_server_ip() << " in port " << port << std::endl;
+
+    while (true) {
+        SOCKET client_socket = accept(server_socket, NULL, NULL);
+        if (client_socket == INVALID_SOCKET) {
+            std::cerr << "Accept failed!" << std::endl;
+            continue;
+        }
+
+        // Add new player
+        Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), ""};
+        players.push_back(player);
+
+        std::cout << player.name << " connected!" << std::endl;
+
+        // Handle player in a separate thread
+        std::thread player_thread(handle_player, std::ref(player));
+        player_thread.detach();
+    }
+
+    closesocket(server_socket);
+    WSACleanup();
 }
 
 int main() {
-    // Crear el socket
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == -1) {
-        cerr << "Error al crear el socket" << endl;
-        return -1;
-    }
-
-    // Configuración del servidor
-    struct sockaddr_in address;
-    int addrlen = sizeof(address);
-
-    address.sin_family = AF_INET; // Familia de direcciones IP
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(9000); // Puerto de conexión
-
-    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        cerr << "Error al hacer bind" << endl;
-        return -1;
-    }
-
-    // Escuchar conexiones
-    if (listen(server_fd, 3) < 0) {
-        cerr << "Error al escuchar" << endl;
-        return -1;
-    }
-
-    // Mostrar la IP del servidor usando getaddrinfo() (en caso de que no se obtenga con getifaddrs())
-    string serverIP = getServerIP();
-    if (serverIP == "No se pudo obtener la IP del servidor") {
-        struct addrinfo hints, *res;
-        memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_INET;  // IPv4
-        hints.ai_socktype = SOCK_STREAM;
-
-        // Obtener la IP del servidor usando getaddrinfo()
-        int status = getaddrinfo(NULL, "9000", &hints, &res);
-        if (status == 0) {
-            char ip[INET_ADDRSTRLEN];
-            struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *) res->ai_addr;
-            inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), ip, INET_ADDRSTRLEN);
-            serverIP = string(ip);
-            freeaddrinfo(res);
-        }
-    }
-
-    cout << "Servidor iniciado en IP: " << serverIP << " en el puerto 9000..." << endl;
-
-    // Aceptar conexiones
-    struct sockaddr_in client_address;
-    socklen_t client_addrlen = sizeof(client_address);
-
-    while (true) {
-        int new_socket = accept(server_fd, (struct sockaddr*)&client_address, &client_addrlen);
-        if (new_socket < 0) {
-            cerr << "Error al aceptar conexión" << endl;
-            continue; // Continuar escuchando nuevas conexiones
-        }
-
-        // Obtener la IP del cliente
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(client_address.sin_addr), client_ip, INET_ADDRSTRLEN);
-        cout << "Nuevo cliente conectado desde IP: " << client_ip << endl;
-
-        // Aquí podrías hacer algo más, como comunicarte con el cliente...
-
-        // Cerrar el socket de cliente (si no es necesario mantener la conexión abierta)
-        close(new_socket);
-    }
-
-    close(server_fd);
+    srand(static_cast<unsigned int>(time(0))); // Seed random number generator
+    int port = 9000; // Server port
+    start_server(port);
 
     return 0;
 }
