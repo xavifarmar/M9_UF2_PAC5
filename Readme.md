@@ -1,1 +1,1 @@
-Para ejecutar desde Windows g++ xxxx.cpp -o xxxx -lws2_32
+CREAR EJECUTABLE:  g++ xxxx.cpp -o xxxx -lws2_32

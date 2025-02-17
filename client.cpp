@@ -13,7 +13,7 @@ int main() {
         return -1;
     }
 
-    std::string server_ip = "172.17.41.26"; // Hardcoded server IP
+    std::string server_ip = "172.17.41.25"; // Hardcoded server IP
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket == INVALID_SOCKET) {
         std::cerr << "Error creating socket!" << std::endl;
