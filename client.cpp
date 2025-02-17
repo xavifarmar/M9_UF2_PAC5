@@ -23,7 +23,7 @@ int main() {
 
     sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(8080); // Server port
+    server_addr.sin_port = htons(9000); // Server port
     server_addr.sin_addr.s_addr = inet_addr(server_ip.c_str());
 
     if (connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
