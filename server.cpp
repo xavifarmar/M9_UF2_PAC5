@@ -32,9 +32,11 @@ struct Player {
 std::vector<Player> players;
 
 void handle_player(Player& player) {
+    Player recievedPlayer = player;
     char buffer[1024];
+
+    // First loop: wait for the player to send "ready" or "not ready"
     while (true) {
-        // Wait for the player to send "ready" or "not ready"
         int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
         if (bytes_received <= 0) {
             std::lock_guard<std::mutex> lock(mtx);
@@ -43,28 +45,29 @@ void handle_player(Player& player) {
             });
             players.erase(it, players.end());
             closesocket(player.socket);
-            std::cout << player.name << " disconnected." << std::endl;
-            break;
+            std::cout << recievedPlayer.name << " disconnected." << std::endl;
+            return;  // Exit the function, player disconnected
         }
         buffer[bytes_received] = '\0'; // Null-terminate the string
         std::string response(buffer);
 
-        {
+        // If the player is "ready", exit the first loop and start the game
+        if (response == "ready") {
             std::lock_guard<std::mutex> lock(mtx);
-            for (auto& p : players) { // Iterate through players and update the correct one
-                std::cout << "Comparing " << p.name << " with " << player.name << std::endl;
-                if (p.name == player.name) {
-                    p.is_ready = (response == "ready");
-                    std::cout << p.name << " is " << (p.is_ready ? "ready!" : "not ready.") << std::endl;
+            for (auto& p : players) {
+                if (p.name == recievedPlayer.name) {
+                    p.is_ready = true;
+                    std::cout << p.name << " is ready!" << std::endl;
                 }
             }
+            break;  // Exit the ready check loop when the player is ready
+        } else if (response == "not ready") {
+            std::cout << recievedPlayer.name << " is not ready." << std::endl;
         }
-
     }
 
-    // Game logic
+    // Game logic loop
     while (true) {
-        char buffer[1024];
         int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
         if (bytes_received <= 0) {
             std::lock_guard<std::mutex> lock(mtx);
@@ -73,8 +76,8 @@ void handle_player(Player& player) {
             });
             players.erase(it, players.end());
             closesocket(player.socket);
-            std::cout << player.name << " disconnected." << std::endl;
-            break;
+            std::cout << recievedPlayer.name << " disconnected." << std::endl;
+            return;  // Exit the function, player disconnected
         }
         buffer[bytes_received] = '\0'; // Null-terminate the string
         player.choice = std::string(buffer);
