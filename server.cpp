@@ -31,7 +31,11 @@ std::vector<Player> players;
 void handle_player(Player& player) {
     char buffer[1024];
     while (true) {
-        // Receive choice from player
+        // Send "OK" message to indicate the server is ready for a new game
+        std::string start_message = "OK";
+        send(player.socket, start_message.c_str(), start_message.length(), 0);
+
+        // Wait for player's move after receiving "OK"
         int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
         if (bytes_received <= 0) {
             break;
@@ -39,7 +43,6 @@ void handle_player(Player& player) {
         buffer[bytes_received] = '\0'; // Null-terminate the string
         player.choice = std::string(buffer);
 
-        // Print player's choice
         std::cout << player.name << " chose " << player.choice << std::endl;
 
         // Game logic to decide winner
@@ -58,12 +61,39 @@ void handle_player(Player& player) {
 
         std::string message = "Your result: " + result + "\n";
         send(player.socket, message.c_str(), message.length(), 0);
+
+        // Wait for all players to finish the game before starting a new one
+        std::this_thread::sleep_for(std::chrono::seconds(2)); // 2 seconds pause before the next round
     }
 }
 
 std::string get_server_ip() {
-    // Return the hardcoded IP address
-    return "172.17.41.26";
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        std::cerr << "Error getting hostname" << std::endl;
+        return "";
+    }
+
+    struct addrinfo hints, *info;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;  // Only IPv4 addresses
+    hints.ai_socktype = SOCK_STREAM;
+
+    int res = getaddrinfo(hostname, NULL, &hints, &info);
+    if (res != 0) {
+        std::cerr << "getaddrinfo failed: " << gai_strerror(res) << std::endl;
+        return "";
+    }
+
+    std::string ip_address;
+    for (struct addrinfo* ptr = info; ptr != NULL; ptr = ptr->ai_next) {
+        sockaddr_in* sockaddr_ipv4 = (struct sockaddr_in*)ptr->ai_addr;
+        ip_address = inet_ntoa(sockaddr_ipv4->sin_addr);
+        break;  // We are only interested in the first valid IPv4 address
+    }
+
+    freeaddrinfo(info);
+    return ip_address;
 }
 
 void start_server(int port) {
