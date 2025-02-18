@@ -36,19 +36,46 @@ int main() {
         return -1;
     }
 
+    std::string status;
+    while (true) {
+        std::cout << "Are you ready? (yes/no): ";
+        std::cin >> status;
+
+        if (status == "yes") {
+            send(client_socket, "ready", 5, 0);
+            break;
+        } else if (status == "no") {
+            send(client_socket, "not ready", 9, 0);
+            std::cout << "Waiting for you to be ready...\n";
+        } else {
+            std::cout << "Invalid input, please enter 'yes' or 'no'.\n";
+        }
+    }
+
+    char buffer[1024];
+    int bytes_received;
+
+    // Wait for "game starting" message
+    while (true) {
+        bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (bytes_received <= 0) {
+            std::cerr << "Connection lost or error receiving data.\n";
+            closesocket(client_socket);
+            WSACleanup();
+            return -1;
+        }
+        buffer[bytes_received] = '\0';
+
+        if (std::string(buffer) == "START") {
+            std::cout << "Game is starting...\n";
+            break;
+        }
+    }
+
     std::string move;
     int choice;
 
     while (true) {
-        // Wait for the "OK" message to start the game
-        char buffer[1024];
-        int bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        buffer[bytes_received] = '\0'; // Null-terminate the string
-        if (std::string(buffer) != "OK") {
-            std::cerr << "Expected 'OK' from server, but received: " << buffer << std::endl;
-            continue; // If not OK, continue to wait
-        }
-
         // Menu for the user to choose a move
         while (true) {
             std::cout << "Choose your move: \n";
@@ -61,26 +88,16 @@ int main() {
             std::cin >> choice;
 
             switch (choice) {
-                case 1:
-                    move = "rock";
-                    break;
-                case 2:
-                    move = "paper";
-                    break;
-                case 3:
-                    move = "scissors";
-                    break;
-                case 4:
-                    move = "lizard";
-                    break;
-                case 5:
-                    move = "spock";
-                    break;
+                case 1: move = "rock"; break;
+                case 2: move = "paper"; break;
+                case 3: move = "scissors"; break;
+                case 4: move = "lizard"; break;
+                case 5: move = "spock"; break;
                 default:
                     std::cout << "Invalid choice, please try again.\n";
-                    continue; // Prompt the user again if invalid input
+                    continue;
             }
-            break; // Exit the loop once a valid choice is made
+            break;
         }
 
         // Send the move to the server
@@ -88,11 +105,11 @@ int main() {
 
         // Receive the result message
         bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        buffer[bytes_received] = '\0'; // Null-terminate the string
+        buffer[bytes_received] = '\0';
         std::cout << buffer << std::endl;
     }
 
-    closesocket(client_socket); // Close the socket
-    WSACleanup(); // Clean up Winsock
+    closesocket(client_socket);
+    WSACleanup();
     return 0;
 }
