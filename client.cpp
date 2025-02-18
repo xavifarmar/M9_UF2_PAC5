@@ -2,6 +2,7 @@
 #include <string>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <regex>
 
 #pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 
@@ -14,8 +15,15 @@ int main() {
     }
 
     std::string server_ip;
-    std::cout << "Enter the server IP address: ";
-    std::cin >> server_ip; // Ask the user for the server IP
+    std::regex ip_regex(R"((\d{1,3}\.){3}\d{1,3})");
+    while (true) {
+        std::cout << "Enter the server IP address: ";
+        std::cin >> server_ip;
+        if (std::regex_match(server_ip, ip_regex)) {
+            break;
+        }
+        std::cout << "Invalid IP address. Please try again.\n";
+    }
 
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket == INVALID_SOCKET) {
@@ -55,7 +63,7 @@ int main() {
     char buffer[1024];
     int bytes_received;
 
-    // Wait for "game starting" message
+    // Wait for "START" message
     while (true) {
         bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
         if (bytes_received <= 0) {
@@ -84,6 +92,7 @@ int main() {
             std::cout << "3. Scissors\n";
             std::cout << "4. Lizard\n";
             std::cout << "5. Spock\n";
+            std::cout << "6. Quit\n";
             std::cout << "Enter the number corresponding to your choice: ";
             std::cin >> choice;
 
@@ -93,10 +102,16 @@ int main() {
                 case 3: move = "scissors"; break;
                 case 4: move = "lizard"; break;
                 case 5: move = "spock"; break;
+                case 6: move = "quit"; break;
                 default:
                     std::cout << "Invalid choice, please try again.\n";
                     continue;
             }
+            break;
+        }
+
+        if (move == "quit") {
+            std::cout << "Exiting the game. Goodbye!\n";
             break;
         }
 
@@ -105,6 +120,10 @@ int main() {
 
         // Receive the result message
         bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (bytes_received <= 0) {
+            std::cerr << "Connection lost.\n";
+            break;
+        }
         buffer[bytes_received] = '\0';
         std::cout << buffer << std::endl;
     }

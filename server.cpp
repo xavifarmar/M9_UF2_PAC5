@@ -6,10 +6,14 @@
 #include <thread>
 #include <map>
 #include <mutex>
+#include <algorithm>
+#include <regex>
 
 #pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 
-std::mutex mtx;
+std::mutex mtx; // Mutex for thread safety
+
+// Game rules in a map (e.g., Rock beats Scissors, etc.)
 std::map<std::string, std::string> rules = {
     {"rock", "scissors"}, {"scissors", "paper"}, {"paper", "rock"},
     {"rock", "lizard"}, {"lizard", "spock"}, {"spock", "scissors"},
@@ -21,71 +25,194 @@ struct Player {
     SOCKET socket;
     std::string name;
     std::string choice;
-    bool ready = false;
+    bool is_ready = false; // Track if the player is ready
 };
 
+// Global list of players
 std::vector<Player> players;
-
-void check_and_start_game() {
-    std::lock_guard<std::mutex> lock(mtx);
-    if (players.size() == 2 && players[0].ready && players[1].ready) {
-        std::cout << "Both players are ready! Game starting..." << std::endl;
-        for (auto& player : players) {
-            std::string start_message = "START";
-            send(player.socket, start_message.c_str(), start_message.length(), 0);
-        }
-    }
-}
 
 void handle_player(Player& player) {
     char buffer[1024];
     while (true) {
+        // Wait for the player to send "ready" or "not ready"
         int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0) break;
-        buffer[bytes_received] = '\0';
-        std::string message(buffer);
-        
-        if (message == "ready") {
+        if (bytes_received <= 0) {
             std::lock_guard<std::mutex> lock(mtx);
-            player.ready = true;
-            std::cout << player.name << " is ready!" << std::endl;
-            check_and_start_game();
-        } else if (message == "not ready") {
+            auto it = std::remove_if(players.begin(), players.end(), [&](const Player& p) {
+                return p.socket == player.socket;
+            });
+            players.erase(it, players.end());
+            closesocket(player.socket);
+            std::cout << player.name << " disconnected." << std::endl;
+            break;
+        }
+        buffer[bytes_received] = '\0'; // Null-terminate the string
+        std::string response(buffer);
+
+        {
             std::lock_guard<std::mutex> lock(mtx);
-            player.ready = false;
-            std::cout << player.name << " is not ready!" << std::endl;
-        } else {
-            player.choice = message;
+            for (auto& p : players) { // Iterate through players and update the correct one
+                std::cout << "Comparing " << p.name << " with " << player.name << std::endl;
+                if (p.name == player.name) {
+                    p.is_ready = (response == "ready");
+                    std::cout << p.name << " is " << (p.is_ready ? "ready!" : "not ready.") << std::endl;
+                }
+            }
+        }
+
+    }
+
+    // Game logic
+    while (true) {
+        char buffer[1024];
+        int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
+        if (bytes_received <= 0) {
+            std::lock_guard<std::mutex> lock(mtx);
+            auto it = std::remove_if(players.begin(), players.end(), [&](const Player& p) {
+                return p.socket == player.socket;
+            });
+            players.erase(it, players.end());
+            closesocket(player.socket);
+            std::cout << player.name << " disconnected." << std::endl;
+            break;
+        }
+        buffer[bytes_received] = '\0'; // Null-terminate the string
+        player.choice = std::string(buffer);
+
+        std::cout << player.name << " chose " << player.choice << std::endl;
+
+        // Game logic to decide winner
+        std::string result = "draw";
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            for (auto& other_player : players) {
+                if (other_player.name != player.name && !other_player.choice.empty()) {
+                    if (rules[player.choice] == other_player.choice) {
+                        result = "win";
+                        break;
+                    } else if (rules[other_player.choice] == player.choice) {
+                        result = "lose";
+                        break;
+                    }
+                }
+            }
+        }
+
+        std::string message = "Your result: " + result + "\n";
+        send(player.socket, message.c_str(), message.length(), 0);
+
+        // Wait for all players to finish the game before starting a new one
+        std::this_thread::sleep_for(std::chrono::seconds(2)); // 2 seconds pause before the next round
+    }
+}
+
+std::string get_server_ip() {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        std::cerr << "Error getting hostname" << std::endl;
+        return "";
+    }
+
+    struct addrinfo hints, *info;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;  // Only IPv4 addresses
+    hints.ai_socktype = SOCK_STREAM;
+
+    int res = getaddrinfo(hostname, NULL, &hints, &info);
+    if (res != 0) {
+        std::cerr << "getaddrinfo failed: " << gai_strerror(res) << std::endl;
+        return "";
+    }
+
+    std::string ip_address;
+    for (struct addrinfo* ptr = info; ptr != NULL; ptr = ptr->ai_next) {
+        sockaddr_in* sockaddr_ipv4 = (struct sockaddr_in*)ptr->ai_addr;
+        ip_address = inet_ntoa(sockaddr_ipv4->sin_addr);
+        break;  // We are only interested in the first valid IPv4 address
+    }
+
+    freeaddrinfo(info);
+    return ip_address;
+}
+
+void check_all_ready() {
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Prevents high CPU usage
+
+        if (!players.empty() && std::all_of(players.begin(), players.end(), [](const Player& p) { return p.is_ready; })) {
+            std::cout << "All players are ready. Game starting!" << std::endl;
+            std::string start_message = "START";
+
+            for (auto& p : players) {
+                send(p.socket, start_message.c_str(), start_message.length(), 0);
+                p.is_ready = false; // Reset for next round
+            }
         }
     }
 }
 
+
 void start_server(int port) {
     WSADATA wsaData;
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed!" << std::endl;
+        return;
+    }
+
     SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == INVALID_SOCKET) {
+        std::cerr << "Error creating socket!" << std::endl;
+        WSACleanup();
+        return;
+    }
+
     sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
-    bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
-    listen(server_socket, 2);
-    std::cout << "Server started. Waiting for clients...\n";
 
-    while (players.size() < 2) {
+    if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+        std::cerr << "Binding failed!" << std::endl;
+        closesocket(server_socket);
+        WSACleanup();
+        return;
+    }
+
+    listen(server_socket, 5);
+    std::cout << "Server started. Waiting for clients...\n";
+    std::cout << "Server IP: " << get_server_ip() << " in port " << port << std::endl;
+
+    while (true) {
         SOCKET client_socket = accept(server_socket, NULL, NULL);
-        Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), ""};
-        players.push_back(player);
+        if (client_socket == INVALID_SOCKET) {
+            std::cerr << "Accept failed!" << std::endl;
+            continue;
+        }
+
+        // Add new player
+        Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), "", false};
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            players.push_back(player);
+        }
         std::cout << player.name << " connected!" << std::endl;
-        std::thread player_thread(handle_player, std::ref(players.back()));
+
+        // Handle player in a separate thread
+        std::thread player_thread(handle_player, std::ref(player));
         player_thread.detach();
     }
+
     closesocket(server_socket);
     WSACleanup();
 }
 
 int main() {
-    int port = 9000;
+    srand(static_cast<unsigned int>(time(0))); // Seed random number generator
+    int port = 9000; // Server port
+
+    std::thread ready_checker(check_all_ready); // Start the thread to monitor readiness
+    ready_checker.detach();
+
     start_server(port);
     return 0;
 }
