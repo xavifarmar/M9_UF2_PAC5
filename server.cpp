@@ -82,7 +82,7 @@ void handle_player(Player& player) {
         buffer[bytes_received] = '\0'; // Null-terminate the string
         player.choice = std::string(buffer);
 
-        std::cout << player.name << " chose " << player.choice << std::endl;
+        std::cout << recievedPlayer.name << " chose " << player.choice << std::endl;
 
         // Game logic to decide winner
         std::string result = "draw";
