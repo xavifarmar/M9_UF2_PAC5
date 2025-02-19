@@ -46,6 +46,26 @@ int main() {
 
     char buffer[1024];
     int bytes_received;
+
+    std::cout << "Wait until 3 players connects to your game...\n";
+
+    // Wait for "START" message
+    while (true) {
+        bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (bytes_received <= 0) {
+            std::cerr << "Connection lost or error receiving data.\n";
+            closesocket(client_socket);
+            WSACleanup();
+            return -1;
+        }
+        buffer[bytes_received] = '\0';
+
+        if (std::string(buffer) == "START") {
+            std::cout << "Game is starting...\n";
+            break;
+        }
+    }
+
     std::string move;
     int choice;
 

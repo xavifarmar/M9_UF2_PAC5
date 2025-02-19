@@ -93,9 +93,12 @@ void handle_player(Player& player) {
 
 void handle_game(std::vector<Player> game_players) {
 
-    // Start player threads
-    for (auto& pl : game_players) {
-        std::thread player_thread(handle_player, std::ref(pl));
+    std::cout << "All players are ready. Game starting!" << std::endl;
+    std::string start_message = "START";
+
+    for (auto& p : game_players) {
+        send(p.socket, start_message.c_str(), start_message.length(), 0);
+        std::thread player_thread(handle_player, std::ref(p));
         player_thread.detach();
     }
 
@@ -186,15 +189,18 @@ void start_server(int port) {
 
     while (true) {
         std::vector<Player> game_players;
-
-        for (int i = 0; i < 3; i++) {
+        
+        while (game_players.size() < 3) { // Esperar hasta tener 3 jugadores
             SOCKET client_socket = accept(server_socket, NULL, NULL);
             if (client_socket == INVALID_SOCKET) {
                 std::cerr << "Accept failed!" << std::endl;
                 continue;
             }
 
-            Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), "", false};
+            Player player;
+            player.socket = client_socket;
+            player.name = "Player_" + std::to_string(players.size() + 1);
+            player.is_ready = false;
 
             {
                 std::lock_guard<std::mutex> lock(mtx);
@@ -205,9 +211,12 @@ void start_server(int port) {
             std::cout << player.name << " connected!" << std::endl;
         }
 
-        // Start game for these 3 players
+        // Iniciar un hilo para manejar el juego
         std::thread game_thread(handle_game, game_players);
-        game_thread.detach();
+        game_thread.detach(); // Para que el hilo siga ejecutándose independientemente.
+
+        // Limpiar la lista de jugadores en la partida
+        game_players.clear();
     }
 
     closesocket(server_socket);
