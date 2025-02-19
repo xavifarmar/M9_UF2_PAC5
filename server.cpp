@@ -37,78 +37,99 @@ void handle_player(Player& player) {
 
     // Game logic loop
     while (true) {
-        int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
+        int bytes_received = recv(player.socket, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received <= 0) {
+            // Desconexión del jugador
             std::lock_guard<std::mutex> lock(mtx);
             auto it = std::remove_if(players.begin(), players.end(), [&](const Player& p) {
                 return p.socket == player.socket;
             });
             players.erase(it, players.end());
             closesocket(player.socket);
-            std::cout << recievedPlayer.name << " disconnected." << std::endl;
-            return;  // Exit the function, player disconnected
+            std::cout << player.name << " disconnected." << std::endl;
+            return;
         }
-        buffer[bytes_received] = '\0'; // Null-terminate the string
+
+        buffer[bytes_received] = '\0';
         player.choice = std::string(buffer);
+        std::cout << player.name << " chose " << player.choice << std::endl;
 
-        std::cout << recievedPlayer.name << " chose " << player.choice << std::endl;
-
-        // Wait for all players to choose their moves
+        // Esperar hasta que todos los jugadores hayan elegido
         bool all_players_chose = false;
         while (!all_players_chose) {
             std::lock_guard<std::mutex> lock(mtx);
             all_players_chose = true;
             for (const auto& p : players) {
-                if (p.choice.empty()) {  // If any player has not made a choice
+                if (p.choice.empty()) {
                     all_players_chose = false;
                     break;
                 }
             }
         }
-
-        // Game logic to decide winner
-        std::string result = "draw";
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            for (auto& other_player : players) {
-                if (other_player.name != player.name && !other_player.choice.empty()) {
-                    if (rules[player.choice] == other_player.choice) {
-                        result = "win";
-                        break;
-                    } else if (rules[other_player.choice] == player.choice) {
-                        result = "lose";
-                        break;
-                    }
-                }
-            }
-        }
-
-        std::string message = "Your result: " + result + "\n";
-        send(player.socket, message.c_str(), message.length(), 0);
-
-        // Wait for all players to finish the game before starting a new one
-        std::this_thread::sleep_for(std::chrono::seconds(2)); // 2 seconds pause before the next round
     }
 }
 
 void handle_game(std::vector<Player> game_players) {
-
     std::cout << "All players are ready. Game starting!" << std::endl;
-    std::string start_message = "START";
 
+    // Enviar mensaje de inicio
+    std::string start_message = "START";
     for (auto& p : game_players) {
         send(p.socket, start_message.c_str(), start_message.length(), 0);
         std::thread player_thread(handle_player, std::ref(p));
         player_thread.detach();
     }
 
-    std::cout << "Game started for: ";
-    for (auto& pl : game_players) {
-        std::cout << pl.name << " ";
+    // Esperar hasta que todos los jugadores hagan su elección
+    bool all_chosen = false;
+    while (!all_chosen) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::lock_guard<std::mutex> lock(mtx);
+        all_chosen = true;
+        for (auto& p : game_players) {
+            if (p.choice.empty()) {
+                all_chosen = false;
+                break;
+            }
+        }
     }
-    std::cout << std::endl;
 
-    // Handle game logic for these 3 players
+    // Determinar resultados
+    std::map<std::string, int> scores;
+    for (auto& p : game_players) {
+        scores[p.choice]++;
+    }
+
+    // Comparar elecciones de los jugadores
+    std::vector<std::string> choices;
+    for (const auto& p : game_players) {
+        choices.push_back(p.choice);
+    }
+
+    std::string winner = "draw";
+    for (auto& p : game_players) {
+        bool won = true;
+        for (auto& other : game_players) {
+            if (p.name != other.name) {
+                if (rules[other.choice] == p.choice) {
+                    won = false;
+                    break;
+                }
+            }
+        }
+        if (won) {
+            winner = p.name;
+            break;
+        }
+    }
+
+    // Enviar resultados a los jugadores
+    for (auto& p : game_players) {
+        std::string message = std::string("Result: ") + (winner == "draw" ? "DRAW" : (winner == p.name ? "WIN" : "LOSE")) + "\n";
+        send(p.socket, message.c_str(), message.length(), 0);
+    }
+
+    std::cout << "Game over. Winner: " << winner << std::endl;
 }
 
 std::string get_server_ip() {
