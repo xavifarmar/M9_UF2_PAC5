@@ -47,7 +47,7 @@ int main() {
     char buffer[1024];
     int bytes_received;
 
-    std::cout << "Wait until 3 players connects to your game...\n";
+    std::cout << "Wait until 3 players connects to your game...\n"
 
     // Wait for "START" message
     while (true) {
@@ -78,6 +78,7 @@ int main() {
             std::cout << "3. Scissors\n";
             std::cout << "4. Lizard\n";
             std::cout << "5. Spock\n";
+            std::cout << "6. Quit\n";
             std::cout << "Enter the number corresponding to your choice: ";
             std::cin >> choice;
 
@@ -87,6 +88,7 @@ int main() {
                 case 3: move = "scissors"; break;
                 case 4: move = "lizard"; break;
                 case 5: move = "spock"; break;
+                case 6: move = "quit"; break;
                 default:
                     std::cout << "Invalid choice, please try again.\n";
                     continue;
