@@ -47,7 +47,7 @@ int main() {
     char buffer[1024];
     int bytes_received;
 
-    std::cout << "Wait until 3 players connects to your game...\n"
+    std::cout << "Wait until 2 players connects to your game...\n"
 
     // Wait for "START" message
     while (true) {
