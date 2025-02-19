@@ -211,7 +211,7 @@ void start_server(int port) {
     while (true) {
         std::vector<Player> game_players;
         
-        while (game_players.size() < 3) { // Esperar hasta tener 3 jugadores
+        while (game_players.size() < 2) { // Esperar hasta tener 3 jugadores
             SOCKET client_socket = accept(server_socket, NULL, NULL);
             if (client_socket == INVALID_SOCKET) {
                 std::cerr << "Accept failed!" << std::endl;
