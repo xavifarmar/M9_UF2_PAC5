@@ -44,42 +44,8 @@ int main() {
         return -1;
     }
 
-    std::string status;
-    while (true) {
-        std::cout << "Are you ready? (yes/no): ";
-        std::cin >> status;
-
-        if (status == "yes") {
-            send(client_socket, "ready", 5, 0);
-            break;
-        } else if (status == "no") {
-            send(client_socket, "not ready", 9, 0);
-            std::cout << "Waiting for you to be ready...\n";
-        } else {
-            std::cout << "Invalid input, please enter 'yes' or 'no'.\n";
-        }
-    }
-
     char buffer[1024];
     int bytes_received;
-
-    // Wait for "START" message
-    while (true) {
-        bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0) {
-            std::cerr << "Connection lost or error receiving data.\n";
-            closesocket(client_socket);
-            WSACleanup();
-            return -1;
-        }
-        buffer[bytes_received] = '\0';
-
-        if (std::string(buffer) == "START") {
-            std::cout << "Game is starting...\n";
-            break;
-        }
-    }
-
     std::string move;
     int choice;
 

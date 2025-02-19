@@ -35,37 +35,6 @@ void handle_player(Player& player) {
     Player recievedPlayer = player;
     char buffer[1024];
 
-    // First loop: wait for the player to send "ready" or "not ready"
-    while (true) {
-        int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0) {
-            std::lock_guard<std::mutex> lock(mtx);
-            auto it = std::remove_if(players.begin(), players.end(), [&](const Player& p) {
-                return p.socket == player.socket;
-            });
-            players.erase(it, players.end());
-            closesocket(player.socket);
-            std::cout << recievedPlayer.name << " disconnected." << std::endl;
-            return;  // Exit the function, player disconnected
-        }
-        buffer[bytes_received] = '\0'; // Null-terminate the string
-        std::string response(buffer);
-
-        // If the player is "ready", exit the first loop and start the game
-        if (response == "ready") {
-            std::lock_guard<std::mutex> lock(mtx);
-            for (auto& p : players) {
-                if (p.name == recievedPlayer.name) {
-                    p.is_ready = true;
-                    std::cout << p.name << " is ready!" << std::endl;
-                }
-            }
-            break;  // Exit the ready check loop when the player is ready
-        } else if (response == "not ready") {
-            std::cout << recievedPlayer.name << " is not ready." << std::endl;
-        }
-    }
-
     // Game logic loop
     while (true) {
         int bytes_received = recv(player.socket, buffer, sizeof(buffer), 0);
@@ -120,6 +89,23 @@ void handle_player(Player& player) {
         // Wait for all players to finish the game before starting a new one
         std::this_thread::sleep_for(std::chrono::seconds(2)); // 2 seconds pause before the next round
     }
+}
+
+void handle_game(std::vector<Player> game_players) {
+
+    // Start player threads
+    for (auto& pl : game_players) {
+        std::thread player_thread(handle_player, std::ref(pl));
+        player_thread.detach();
+    }
+
+    std::cout << "Game started for: ";
+    for (auto& pl : game_players) {
+        std::cout << pl.name << " ";
+    }
+    std::cout << std::endl;
+
+    // Handle game logic for these 3 players
 }
 
 std::string get_server_ip() {
@@ -199,23 +185,29 @@ void start_server(int port) {
     std::cout << "Server IP: " << get_server_ip() << " in port " << port << std::endl;
 
     while (true) {
-        SOCKET client_socket = accept(server_socket, NULL, NULL);
-        if (client_socket == INVALID_SOCKET) {
-            std::cerr << "Accept failed!" << std::endl;
-            continue;
+        std::vector<Player> game_players;
+
+        for (int i = 0; i < 3; i++) {
+            SOCKET client_socket = accept(server_socket, NULL, NULL);
+            if (client_socket == INVALID_SOCKET) {
+                std::cerr << "Accept failed!" << std::endl;
+                continue;
+            }
+
+            Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), "", false};
+
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                players.push_back(player);
+            }
+
+            game_players.push_back(player);
+            std::cout << player.name << " connected!" << std::endl;
         }
 
-        // Add new player
-        Player player = {client_socket, "Player_" + std::to_string(players.size() + 1), "", false};
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            players.push_back(player);
-        }
-        std::cout << player.name << " connected!" << std::endl;
-
-        // Handle player in a separate thread
-        std::thread player_thread(handle_player, std::ref(player));
-        player_thread.detach();
+        // Start game for these 3 players
+        std::thread game_thread(handle_game, game_players);
+        game_thread.detach();
     }
 
     closesocket(server_socket);
