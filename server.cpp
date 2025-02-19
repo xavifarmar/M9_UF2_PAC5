@@ -84,6 +84,19 @@ void handle_player(Player& player) {
 
         std::cout << recievedPlayer.name << " chose " << player.choice << std::endl;
 
+        // Wait for all players to choose their moves
+        bool all_players_chose = false;
+        while (!all_players_chose) {
+            std::lock_guard<std::mutex> lock(mtx);
+            all_players_chose = true;
+            for (const auto& p : players) {
+                if (p.choice.empty()) {  // If any player has not made a choice
+                    all_players_chose = false;
+                    break;
+                }
+            }
+        }
+
         // Game logic to decide winner
         std::string result = "draw";
         {
